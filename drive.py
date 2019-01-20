@@ -3,7 +3,7 @@ import base64
 from datetime import datetime
 import os
 import shutil
-
+import cv2
 import numpy as np
 import socketio
 import eventlet
@@ -11,7 +11,10 @@ import eventlet.wsgi
 from PIL import Image
 from flask import Flask
 from io import BytesIO
-
+from config import *
+from load_data import preprocess
+from keras.models import model_from_json
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array
 from keras.models import load_model
 import h5py
 from keras import __version__ as keras_version
@@ -60,10 +63,17 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
-        image_array = np.asarray(image)
-        steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
+        # frames incoming from the simulator are in RGB format
+        image_array = cv2.cvtColor(np.asarray(image), code=cv2.COLOR_RGB2BGR)
 
-        throttle = controller.update(float(speed))
+        # perform preprocessing (crop, resize etc.)
+        image_array = preprocess(frame_bgr=image_array)
+        # add singleton batch dimension
+        image_array = np.expand_dims(image_array, axis=0)
+        # This model currently assumes that the features of the model are just the images. Feel free to change this.
+        steering_angle = float(model.predict(image_array, batch_size=1))
+
+        throttle = 0.17
 
         print(steering_angle, throttle)
         send_control(steering_angle, throttle)
